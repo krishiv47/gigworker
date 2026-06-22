@@ -1,0 +1,8 @@
+# Local secrets — never commit API keys
+secrets.js
+
+# OS / editor
+.DS_Store
+
+# Preview server helper output
+.claude/serve.js.log

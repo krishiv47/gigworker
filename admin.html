@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GigGuard — Dispatch Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    .layout { display: grid; grid-template-columns: 340px minmax(0, 1fr) 420px; height: calc(100vh - 59px); }
+    .col { overflow-y: auto; }
+    .col:last-child { box-shadow: -6px 0 16px rgba(163,177,198,.25); }
+
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px; }
+    .stat { background: var(--neo-bg); box-shadow: var(--shadow-sm); border-radius: 16px; padding: 14px; }
+    .stat .n { font-size: 26px; font-weight: 800; letter-spacing: -1px; }
+    .stat .l { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; }
+    .ops-strip { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 0 14px 14px; }
+    .ops-card { background: var(--neo-bg); box-shadow: var(--inset-sm); border-radius: 14px; padding: 11px 13px; display: flex; align-items: center; gap: 10px; }
+    .ops-card .icon { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--neo-bg); box-shadow: var(--shadow-sm); color: var(--accent); }
+    .ops-card .k { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .8px; }
+    .ops-card .v { font-weight: 800; margin-top: 2px; }
+
+    .list-head { padding: 6px 14px 8px; display: flex; align-items: center; gap: 8px; }
+    .list-head h3 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+
+    .incident {
+      margin: 0 12px 12px; padding: 14px; border-radius: 16px; cursor: pointer;
+      background: var(--neo-bg); box-shadow: var(--shadow-sm); border-left: 4px solid transparent;
+      transition: box-shadow .15s;
+    }
+    .incident:hover { box-shadow: var(--shadow); }
+    .incident.sel { box-shadow: var(--inset-sm); border-left-color: var(--accent); }
+    .incident.bl-CRITICAL { border-left-color: var(--critical); }
+    .incident.bl-SERIOUS  { border-left-color: var(--serious); }
+    .incident.bl-MINOR    { border-left-color: var(--minor); }
+    .incident .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .incident .who { font-weight: 700; }
+    .incident .meta { color: var(--muted); font-size: 12px; margin-top: 5px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .incident.new-flash { animation: flash 1.1s ease-in-out 3; }
+    @keyframes flash { 50% { box-shadow: 0 0 0 2px var(--critical), var(--shadow-sm); } }
+
+    .empty { color: var(--dim); text-align: center; padding: 40px 20px; font-size: 14px; }
+
+    #map { width: 100%; height: 100%; }
+
+    /* detail panel */
+    .detail { padding: 16px; }
+    .detail .banner {
+      display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px;
+      border: 1px solid; font-weight: 800; letter-spacing: .5px; margin-bottom: 14px;
+    }
+    .drow { display: flex; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .drow .k { color: var(--muted); width: 122px; flex: none; }
+    .drow .v { font-weight: 600; }
+    .ai-list { margin: 8px 0 0; padding-left: 18px; }
+    .ai-list li { margin: 3px 0; font-size: 13px; }
+    .priority { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; }
+    .priority .score { font-size: 30px; font-weight: 800; }
+    .hidden { display: none !important; }
+    .seg { display: flex; gap: 0; background: var(--neo-bg); box-shadow: var(--inset-sm); border-radius: 12px; overflow: hidden; margin-bottom: 14px; }
+    .seg .step { flex: 1; text-align: center; font-size: 11px; padding: 7px 4px; color: var(--dim); border-right: 1px solid var(--border); }
+    .seg .step:last-child { border-right: none; }
+    .seg .step.on { color: #fff; background: var(--accent); border-radius: 10px; }
+    .seg .step.done { color: var(--good); }
+    .bb-legend { display: flex; align-items: center; gap: 14px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+    .bb-legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+
+    /* fleet roster */
+    #fleet { padding: 0 12px 16px; }
+    .unit { display: flex; align-items: center; gap: 8px; padding: 9px 11px; margin-bottom: 7px; border-radius: 12px;
+            background: var(--neo-bg); box-shadow: var(--shadow-sm); font-size: 12px; cursor: default; }
+    .unit[data-inc]:not([data-inc=""]) { cursor: pointer; }
+    .unit[data-inc]:not([data-inc=""]):hover { box-shadow: var(--shadow); }
+    .unit .uid { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .unit .utype { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 5px; background: var(--neo-bg); box-shadow: var(--inset-sm); color: var(--muted); }
+    .unit .ustat { margin-left: auto; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+    .intel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+    .intel-box { background: var(--neo-bg); box-shadow: var(--inset-sm); border-radius: 12px; padding: 11px; min-width: 0; }
+    .intel-box .lbl { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .8px; }
+    .intel-box .val { font-weight: 800; margin-top: 5px; word-break: break-word; }
+    .support-row { display: flex; align-items: center; gap: 10px; background: var(--neo-bg); box-shadow: var(--inset-sm); border-radius: 12px; padding: 10px; margin-top: 8px; }
+    .support-row .main { flex: 1; min-width: 0; }
+    .support-row .name { font-weight: 800; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .support-row .meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .transcript { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .transcript li { display: flex; gap: 10px; font-size: 12px; line-height: 1.45; background: var(--neo-bg); box-shadow: var(--inset-sm); border-radius: 11px; padding: 9px; }
+    .transcript .t { color: var(--accent); font-family: var(--font-mono); min-width: 54px; }
+    .dispatch-chat-shell { padding: 0 16px 16px; }
+    .dispatch-chat-shell .chat-container { height: 360px; max-height: 360px; }
+
+    @media (max-width: 1120px) {
+      .layout { grid-template-columns: 320px minmax(0, 1fr); }
+      .layout > .col:last-child { grid-column: 1 / -1; height: 520px; border-left: none; border-top: 1px solid var(--border); }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo-mark"><span class="ico-host" data-icon="ambulance" data-size="22"></span></div>
+    <div>
+      <div class="title">GigGuard <span class="role-tag">· Dispatch Center</span></div>
+    </div>
+    <div class="spacer"></div>
+    <span id="aiBadge" class="ai-badge" style="font-size:12px;"><span class="dot" id="aiDot" style="background:var(--dim)"></span> <span id="aiLabel">Rule-based</span></span>
+    <span class="pill"><span class="live-dot"></span> Live</span>
+    <button id="simBtn" class="btn" style="padding:7px 14px;"><span class="ico-host" data-icon="play" data-size="16" data-fill></span> Simulate</button>
+    <button id="soundBtn" class="btn btn-ghost" style="padding:7px 12px;" title="Toggle alert sound"><span class="ico-host" data-icon="bell" data-size="18"></span></button>
+    <a href="index.html" class="btn btn-ghost" style="padding:7px 12px;"><span class="ico-host" data-icon="x" data-size="18"></span></a>
+  </div>
+
+  <div class="layout">
+    <!-- left: stats + incident queue -->
+    <div class="col">
+      <div class="stats">
+        <div class="stat"><div class="n" id="stActive">0</div><div class="l">Active</div></div>
+        <div class="stat"><div class="n" id="stCritical" style="color:var(--critical)">0</div><div class="l">Critical</div></div>
+        <div class="stat"><div class="n" id="stEnroute" style="color:var(--accent-2)">0</div><div class="l">En route</div></div>
+        <div class="stat"><div class="n" id="stResolved" style="color:var(--good)">0</div><div class="l">Resolved</div></div>
+      </div>
+      <div class="ops-strip">
+        <div class="ops-card"><span class="icon"><span class="ico-host" data-icon="bike" data-size="17"></span></span><div><div class="k">Active riders</div><div class="v" id="stRiders">1,248</div></div></div>
+        <div class="ops-card"><span class="icon"><span class="ico-host" data-icon="clock" data-size="17"></span></span><div><div class="k">Avg response</div><div class="v" id="stAvgResponse">4m 12s</div></div></div>
+        <div class="ops-card"><span class="icon"><span class="ico-host" data-icon="radio" data-size="17"></span></span><div><div class="k">Responder mesh</div><div class="v" id="stMesh">0 active</div></div></div>
+      </div>
+      <div class="list-head"><h3>Incident queue</h3><span class="spacer" style="flex:1"></span>
+        <button id="seedBtn" class="btn btn-ghost" style="padding:5px 9px;font-size:12px;"><span class="ico-host" data-icon="plus" data-size="14"></span> demo</button>
+      </div>
+      <div id="list"></div>
+
+      <div class="list-head" style="margin-top:8px;"><h3>Ambulance fleet</h3><span class="spacer" style="flex:1"></span>
+        <span id="fleetSummary" class="dim" style="font-size:11px;"></span>
+      </div>
+      <div id="fleet"></div>
+    </div>
+
+    <!-- center: map -->
+    <div style="position:relative;">
+      <div id="map"></div>
+    </div>
+
+    <!-- right: incident detail -->
+    <div class="col">
+      <div id="detail" class="detail">
+        <div class="empty">Select an incident to view its AI medical assessment and dispatch an ambulance.</div>
+      </div>
+      <div class="dispatch-chat-shell">
+        <div class="card">
+          <div class="card-title" id="chatTitle" style="display:flex;align-items:center;gap:6px;">AI incident chat</div>
+          <div id="incidentChat"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="icons.js"></script>
+  <script src="secrets.js"></script>
+  <script src="common.js"></script>
+  <script src="chat.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>GigGuard — Driver</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    .phone-wrap { max-width: 440px; margin: 0 auto; padding: 16px; }
+    .status-hero {
+      border-radius: 26px; padding: 24px; text-align: center;
+      background: var(--neo-bg); box-shadow: var(--shadow); transition: box-shadow .3s;
+    }
+    .status-hero .shield { color: var(--dim); }
+    .status-hero.armed .shield { color: var(--good); }
+    .status-hero.alert .shield { color: var(--critical); }
+    .shield { width: 64px; height: 64px; margin: 0 auto 6px; border-radius: 50%; display: grid; place-items: center;
+      background: var(--neo-bg); box-shadow: var(--inset-sm); }
+    .status-title { font-size: 22px; font-weight: 800; margin: 10px 0 4px; color: var(--text); }
+    .status-sub { color: var(--muted); font-size: 13px; }
+
+    .gauges { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+    .gauge { background: var(--neo-bg); box-shadow: var(--shadow-sm); border-radius: 18px; padding: 16px; text-align: center; }
+    .gauge .val { font-size: 30px; font-weight: 800; letter-spacing: -1px; color: var(--text); }
+    .gauge .unit { color: var(--dim); font-size: 12px; }
+    .gauge .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+    .gbar { height: 8px; border-radius: 6px; background: var(--neo-bg); box-shadow: var(--inset-sm); margin-top: 12px; overflow: hidden; }
+    .gbar > span { display: block; height: 100%; width: 0%; background: var(--good); transition: width .12s linear, background .2s; }
+
+    .row { display: flex; gap: 10px; margin-top: 12px; }
+    .row > * { flex: 1; }
+    .field { margin-bottom: 10px; }
+    .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+    .field input {
+      width: 100%; background: var(--neo-bg); border: none; color: var(--text);
+      padding: 11px 13px; border-radius: 11px; font-size: 14px; box-shadow: var(--inset-sm);
+    }
+    .field input::placeholder { color: var(--dim); }
+    #driverMap { height: 190px; border-radius: 18px; box-shadow: var(--inset-sm); margin-top: 14px; overflow: hidden; }
+    .hidden { display: none !important; }
+
+    .sentinel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    .sentinel-card { background: var(--neo-bg); box-shadow: var(--shadow-sm); border-radius: 16px; padding: 14px; min-height: 82px; }
+    .sentinel-card .label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .8px; }
+    .sentinel-card .value { font-family: var(--font-head); font-size: 20px; font-weight: 800; margin-top: 6px; color: var(--text); }
+    .sentinel-card .sub { color: var(--dim); font-size: 11px; margin-top: 3px; line-height: 1.35; }
+    .support-list { display: flex; flex-direction: column; gap: 8px; }
+    .support-row { display: flex; align-items: center; gap: 10px; background: var(--neo-bg); box-shadow: var(--inset-sm); border-radius: 13px; padding: 11px; }
+    .support-row .main { flex: 1; min-width: 0; }
+    .support-row .name { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .support-row .meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .support-row .action { flex: none; color: var(--accent); font-weight: 800; font-size: 12px; }
+    .contact-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .contact-card { background: var(--neo-bg); box-shadow: var(--inset-sm); border-radius: 13px; padding: 11px; display: flex; gap: 10px; align-items: center; }
+    .contact-card .status { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; }
+    .guide-steps { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 8px; }
+    .guide-steps li { display: flex; gap: 9px; align-items: flex-start; background: var(--neo-bg); box-shadow: var(--inset-sm); border-radius: 12px; padding: 11px; font-size: 13px; line-height: 1.4; }
+    .guide-steps b { color: var(--serious); }
+    .law-note { display: flex; gap: 8px; align-items: flex-start; background: rgba(180,83,9,.10); color: #92400e; border-radius: 12px; padding: 11px; font-size: 12px; line-height: 1.45; }
+
+    /* countdown overlay */
+    .overlay {
+      position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center;
+      background: rgba(224,229,236,.78); backdrop-filter: blur(6px); padding: 20px;
+    }
+    .countdown-card { max-width: 380px; width: 100%; text-align: center; }
+    .ring { position: relative; width: 180px; height: 180px; margin: 6px auto 4px; border-radius: 50%; box-shadow: var(--inset); }
+    .ring svg { transform: rotate(-90deg); }
+    .ring .num { position: absolute; inset: 0; display: grid; place-items: center; font-size: 56px; font-weight: 800; color: var(--text); }
+    .pulse-warn { animation: warn 1s infinite; }
+    @keyframes warn { 50% { opacity: .55; } }
+
+    /* black box live recorder */
+    .bb-graph { position: relative; margin-top: 12px; background: var(--neo-bg); box-shadow: var(--inset-sm); border-radius: 14px; padding: 10px; }
+    .bb-graph svg { width: 100%; height: 90px; display: block; }
+    .bb-axis-label { position: absolute; top: 8px; right: 12px; font-size: 10px; color: var(--dim); letter-spacing: .5px; }
+    .bb-row { display: flex; gap: 8px; margin-top: 10px; }
+    .bb-metric { flex: 1; background: var(--neo-bg); box-shadow: var(--inset-sm); border-radius: 12px; padding: 9px 4px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .bb-val { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .bb-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-top: 3px; }
+    .compass-wrap svg { display: block; }
+    .sensit-row { display: flex; gap: 6px; margin-top: 6px; }
+    .sensit-btn { flex: 1; background: var(--neo-bg); box-shadow: var(--shadow-sm); border-radius: 11px; padding: 9px 2px; text-align: center; color: var(--muted); cursor: pointer; transition: box-shadow .15s; }
+    .sensit-btn.on { box-shadow: var(--inset-sm); color: var(--accent); }
+    .sensit-btn b { display: block; font-size: 14px; }
+    .sensit-btn span { font-size: 9px; color: var(--dim); }
+    .bb-legend { display: flex; align-items: center; gap: 14px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+    .bb-legend i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+
+    /* live status log */
+    .timeline { list-style: none; margin: 12px 0 0; padding: 0; }
+    .timeline li { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+    .timeline li .t { color: var(--dim); font-size: 11px; min-width: 64px; }
+    .eta-big { font-size: 40px; font-weight: 800; letter-spacing: -1px; color: var(--text); }
+
+    /* misc */
+    .ai-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px; background: var(--neo-bg); box-shadow: var(--inset-sm); color: var(--muted); }
+    .glass { }
+    .shimmer { background: linear-gradient(90deg, rgba(163,177,198,.25), rgba(163,177,198,.5), rgba(163,177,198,.25)); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    .first-aid-card { background: var(--neo-bg); box-shadow: var(--shadow); border-radius: var(--radius); padding: 18px; border-left: 4px solid var(--good); }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo-mark"><span class="ico-host" data-icon="shield" data-size="20"></span></div>
+    <div>
+      <div class="title">GigGuard <span class="role-tag">· Driver</span></div>
+    </div>
+    <div class="spacer"></div>
+    <span id="aiBadge" class="ai-badge" style="font-size:12px;"><span class="dot" id="aiDot" style="background:var(--dim)"></span> <span id="aiLabel">Rule-based</span></span>
+    <span id="conn" class="pill"><span class="dot" style="background:var(--dim)"></span> Standby</span>
+    <a href="index.html" class="btn btn-ghost" style="padding:7px 12px;"><span class="ico-host" data-icon="x" data-size="18"></span></a>
+  </div>
+
+  <div class="phone-wrap">
+    <!-- ===== Monitoring view ===== -->
+    <section id="view-monitor">
+      <div id="hero" class="status-hero idle">
+        <div class="shield" id="heroIcon"><span class="ico-host" data-icon="shield" data-size="30"></span></div>
+        <div class="status-title" id="heroTitle">Protection off</div>
+        <div class="status-sub" id="heroSub">Start monitoring to begin crash detection</div>
+      </div>
+
+      <div class="gauges">
+        <div class="gauge">
+          <div><span class="val" id="gforce">1.0</span><span class="unit"> G</span></div>
+          <div class="lbl">Impact force</div>
+          <div class="gbar"><span id="gforceBar"></span></div>
+        </div>
+        <div class="gauge">
+          <div><span class="val" id="speed">0</span><span class="unit"> km/h</span></div>
+          <div class="lbl">Speed</div>
+          <div class="gbar"><span id="speedBar"></span></div>
+        </div>
+      </div>
+
+      <div class="sentinel-grid">
+        <div class="sentinel-card">
+          <div class="label">Shift duration</div>
+          <div class="value" id="shiftDuration">00:00:00</div>
+          <div class="sub" id="shiftStarted">Start monitoring to begin</div>
+        </div>
+        <div class="sentinel-card">
+          <div class="label">GPS lock</div>
+          <div class="value" id="gpsState">Standby</div>
+          <div class="sub mono" id="gpsCoords">--</div>
+        </div>
+        <div class="sentinel-card">
+          <div class="label">Device battery</div>
+          <div class="value" id="batteryPct">--</div>
+          <div class="sub" id="batteryHint">Battery API unavailable</div>
+        </div>
+        <div class="sentinel-card">
+          <div class="label">Rider pulse</div>
+          <div class="value" id="pulseState">72 BPM</div>
+          <div class="sub" id="pulseHint">Relaxed baseline estimate</div>
+        </div>
+      </div>
+
+      <div id="driverMap"></div>
+
+      <div class="row">
+        <button id="armBtn" class="btn btn-primary btn-block btn-lg"><span class="ico-host" data-icon="play" data-size="18" data-fill></span> Start monitoring</button>
+      </div>
+      <div class="row">
+        <button id="driveBtn" class="btn btn-block" disabled><span class="ico-host" data-icon="bike" data-size="17"></span> Simulate driving</button>
+        <button id="crashBtn" class="btn btn-danger btn-block" disabled><span class="ico-host" data-icon="zap" data-size="17"></span> Simulate crash</button>
+      </div>
+      <div class="row">
+        <button id="manualBtn" class="btn btn-danger btn-block btn-lg"><span class="ico-host" data-icon="siren" data-size="18"></span> Manual SOS trigger</button>
+      </div>
+      <div class="status-sub" style="text-align:center;margin-top:8px;" id="sensorHint">
+        On a phone, grant motion access and a hard shake will trigger detection.
+      </div>
+
+      <!-- ===== Black box live recorder ===== -->
+      <div class="card" style="margin-top:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div class="card-title" style="margin:0;display:flex;align-items:center;gap:6px;"><span class="ico-host" data-icon="box" data-size="14"></span> Black box</div>
+          <span id="recBadge" class="pill"><span class="dot" style="background:var(--dim)"></span> Idle</span>
+        </div>
+        <div class="bb-graph"><svg id="liveGraph" viewBox="0 0 320 90" preserveAspectRatio="none"></svg>
+          <span class="bb-axis-label">G-force · last 12s</span></div>
+        <div class="bb-row">
+          <div class="bb-metric"><span id="axX" class="bb-val" style="color:#4a9eff">0.00</span><span class="bb-lbl">X-axis</span></div>
+          <div class="bb-metric"><span id="axY" class="bb-val" style="color:#a855f7">0.00</span><span class="bb-lbl">Y-axis</span></div>
+          <div class="bb-metric"><span id="axZ" class="bb-val" style="color:#f59e0b">1.00</span><span class="bb-lbl">Z-axis</span></div>
+          <div class="bb-metric compass-wrap">
+            <svg id="compass" viewBox="0 0 56 56" width="40" height="40">
+              <circle cx="28" cy="28" r="24" fill="none" stroke="#c4cdda" stroke-width="2"/>
+              <line id="cArrow" x1="28" y1="28" x2="28" y2="10" stroke="#8a93a3" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="28" cy="28" r="3" fill="#191c1e"/>
+            </svg>
+            <span class="bb-lbl">Impact vector</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Detection sensitivity ===== -->
+      <div class="card" style="margin-top:12px;">
+        <div class="card-title">Detection sensitivity</div>
+        <div class="sensit-row" id="sensitRow"></div>
+        <div class="status-sub" style="margin-top:8px;">Lower = more sensitive. 2.5G catches most crashes without false alarms.</div>
+      </div>
+
+      <div class="card" style="margin-top:12px;">
+        <div class="card-title">Rider profile</div>
+        <div class="field"><label>Name</label><input id="pName" placeholder="Rider name" /></div>
+        <div class="row" style="margin-top:0;">
+          <div class="field" style="flex:1"><label>Age</label><input id="pAge" placeholder="29" /></div>
+          <div class="field" style="flex:1"><label>Blood type</label><input id="pBlood" placeholder="O+" /></div>
+        </div>
+        <div class="row" style="margin-top:0;">
+          <div class="field" style="flex:1"><label>Vehicle</label><input id="pVehicle" placeholder="DL 1A 2345" /></div>
+          <div class="field" style="flex:1"><label>Phone</label><input id="pPhone" placeholder="+91 ..." /></div>
+        </div>
+        <div class="field"><label>Emergency contact name</label><input id="pContactName" placeholder="Primary contact" /></div>
+        <div class="field"><label>Emergency contact phone</label><input id="pContact" placeholder="+91 ..." /></div>
+        <div class="field"><label>Allergies</label><input id="pAllergies" placeholder="None reported" /></div>
+        <div class="field" style="margin-bottom:0"><label>Medical conditions</label><input id="pConditions" placeholder="No major medical history" /></div>
+      </div>
+    </section>
+
+    <!-- ===== Active SOS view ===== -->
+    <section id="view-sos" class="hidden">
+      <div class="status-hero alert">
+        <div class="shield"><span class="ico-host" data-icon="siren" data-size="30"></span></div>
+        <div class="status-title">SOS ACTIVE</div>
+        <div class="status-sub" id="sosSub">Your location and injury report were sent to dispatch</div>
+      </div>
+
+      <!-- AI classification source -->
+      <div id="aiSourceCard" class="card glass" style="margin-top:14px;text-align:center;padding:10px 14px;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
+          <span id="aiSourceIcon" class="ico-host" data-icon="activity" data-size="16"></span>
+          <span id="aiSourceText" class="muted" style="font-size:13px;">Analyzing crash data...</span>
+        </div>
+        <div id="aiLoadingShimmer" class="shimmer" style="height:4px;border-radius:2px;margin-top:8px;"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px; text-align:center;">
+        <div class="card-title" style="margin-bottom:6px;">Ambulance status</div>
+        <div id="sosStatusBadge" class="pill" style="margin-bottom:10px;">Awaiting dispatch</div>
+        <div id="etaWrap" class="hidden">
+          <div class="eta-big"><span id="etaVal">--</span> <span style="font-size:18px;color:var(--muted)">min</span></div>
+          <div class="status-sub"><span id="ambName">Ambulance</span> · <span id="ambDist">--</span> km away</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px;">
+        <div class="card-title">Emergency contact mesh</div>
+        <div id="contactGrid" class="contact-grid"></div>
+      </div>
+
+      <div id="sosMap" style="height:200px;border-radius:18px;box-shadow:var(--inset-sm);margin-top:12px;overflow:hidden;"></div>
+
+      <div class="card" style="margin-top:12px;">
+        <div class="card-title">Nearby emergency services</div>
+        <div id="nearbyList" class="support-list"></div>
+      </div>
+
+      <div class="card" style="margin-top:12px;">
+        <div class="card-title">Bystander guide</div>
+        <div id="lawNote" class="law-note"></div>
+        <ul id="bystanderSteps" class="guide-steps"></ul>
+      </div>
+
+      <!-- First Aid Instructions (AI-generated) -->
+      <div id="firstAidCard" class="first-aid-card hidden" style="margin-top:12px;">
+        <div class="card-title" style="display:flex;align-items:center;gap:6px;"><span class="ico-host" data-icon="hospital" data-size="14"></span> First Aid · while waiting for ambulance</div>
+        <div id="firstAidContent"></div>
+        <div class="muted" style="font-size:10px;margin-top:8px;display:flex;align-items:center;gap:5px;"><span class="ico-host" data-icon="alert-triangle" data-size="12"></span> AI-generated guidance — always follow professional medical advice</div>
+      </div>
+
+      <!-- AI Rider Chat -->
+      <div class="card hidden" style="margin-top:12px;" id="driverChatCard">
+        <div class="card-title" style="display:flex;align-items:center;gap:6px;"><span class="ico-host" data-icon="message-circle" data-size="14"></span> Ask AI for Help</div>
+        <div id="driverChat" style="min-height:220px;display:flex;flex-direction:column;"></div>
+      </div>
+
+      <div class="card" style="margin-top:12px;">
+        <div class="card-title" style="display:flex;align-items:center;gap:6px;"><span class="ico-host" data-icon="box" data-size="14"></span> Black box recording · 30s before impact</div>
+        <div id="sosBlackBox"></div>
+        <div class="bb-legend">
+          <span><i style="background:#dc2626"></i>G-force</span>
+          <span><i style="background:#2563eb"></i>Speed</span>
+          <span><i style="background:#191c1e"></i>Impact</span>
+          <span id="bbPeak" class="dim" style="margin-left:auto;"></span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px;">
+        <div class="card-title">Live updates</div>
+        <ul id="timeline" class="timeline"></ul>
+      </div>
+
+      <div class="row">
+        <a id="callBtn" class="btn btn-block" href="tel:112"><span class="ico-host" data-icon="phone" data-size="17"></span> Call 112</a>
+        <button id="safeBtn" class="btn btn-good btn-block"><span class="ico-host" data-icon="check" data-size="18"></span> I'm safe</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== Crash countdown overlay ===== -->
+  <div id="overlay" class="overlay hidden">
+    <div class="card countdown-card">
+      <div class="pill sev-CRITICAL pulse-warn" id="ovSev" style="margin-bottom:6px;">POSSIBLE CRASH</div>
+      <h2 style="margin:6px 0 0;">Are you OK?</h2>
+      <div class="muted" style="font-size:13px;">Auto-sending SOS to emergency dispatch…</div>
+      <div class="ring">
+        <svg width="180" height="180">
+          <circle cx="90" cy="90" r="80" stroke="#c4cdda" stroke-width="10" fill="none"></circle>
+          <circle id="ovRing" cx="90" cy="90" r="80" stroke="var(--critical)" stroke-width="10"
+                  fill="none" stroke-linecap="round" stroke-dasharray="502" stroke-dashoffset="0"></circle>
+        </svg>
+        <div class="num" id="ovNum">15</div>
+      </div>
+      <button id="ovCancel" class="btn btn-good btn-block btn-lg" style="margin-top:8px;"><span class="ico-host" data-icon="check" data-size="18"></span> I'M OK — Cancel</button>
+      <button id="ovSend" class="btn btn-danger btn-block" style="margin-top:10px;">Send SOS now</button>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="icons.js"></script>
+  <script src="secrets.js"></script>
+  <script src="common.js"></script>
+  <script src="chat.js"></script>
+  <script src="driver.js"></script>
+</body>
+</html>
