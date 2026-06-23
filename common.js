@@ -452,7 +452,15 @@ const GroqAPI = (function () {
   // direct key is present (i.e. on the public deployment), so the key never
   // reaches the browser. Configurable via window.GIGGUARD_PROXY_URL so a
   // statically-hosted copy can point at an absolute proxy URL.
-  function proxyURL() { return (typeof window !== 'undefined' && window.GIGGUARD_PROXY_URL) || '/api/groq'; }
+  function proxyURL() {
+    if (typeof window !== 'undefined' && window.GIGGUARD_PROXY_URL) return window.GIGGUARD_PROXY_URL;
+    // GitHub Pages is static and can't host the serverless proxy, so route those
+    // origins to the Vercel deployment (which holds the key). CORS allows it.
+    if (typeof location !== 'undefined' && /\.github\.io$/.test(location.hostname)) {
+      return 'https://gigworker-blond.vercel.app/api/groq';
+    }
+    return '/api/groq';
+  }
   function proxyAvailable() { return typeof location !== 'undefined' && /^https?:$/.test(location.protocol); }
 
   async function call(systemPrompt, userContent, opts) {
