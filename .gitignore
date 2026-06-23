@@ -4,6 +4,6 @@ secrets.js
 # OS / editor
 .DS_Store
 
-# Preview server helper output
-.claude/serve.js.log
+# Claude Code local config + preview server (keep out of the repo)
+.claude/
 .vercel
