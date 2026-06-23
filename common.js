@@ -444,14 +444,19 @@ const GroqAPI = (function () {
   function setKey(k) { const s = loadSettings(); s.apiKey = k; saveSettings(s); }
   function getModel() { return loadSettings().model || DEFAULT_MODEL; }
   function setModel(m) { const s = loadSettings(); s.model = m; saveSettings(s); }
-  function isEnabled() { return loadSettings().enabled !== false && !!getKey(); }
+  function isEnabled() { return loadSettings().enabled !== false && (!!getKey() || proxyAvailable()); }
   function setEnabled(v) { const s = loadSettings(); s.enabled = v; saveSettings(s); }
   function hasBuiltin() { return !!BUILTIN; }
 
+  // Serverless proxy that holds the real key server-side. Used whenever no
+  // direct key is present (i.e. on the public deployment), so the key never
+  // reaches the browser. Configurable via window.GIGGUARD_PROXY_URL so a
+  // statically-hosted copy can point at an absolute proxy URL.
+  function proxyURL() { return (typeof window !== 'undefined' && window.GIGGUARD_PROXY_URL) || '/api/groq'; }
+  function proxyAvailable() { return typeof location !== 'undefined' && /^https?:$/.test(location.protocol); }
+
   async function call(systemPrompt, userContent, opts) {
     opts = opts || {};
-    const key = getKey();
-    if (!key) throw new Error('No Groq API key configured');
 
     const messages = [];
     if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
@@ -466,14 +471,30 @@ const GroqAPI = (function () {
     };
     if (opts.json) body.response_format = { type: 'json_object' };
 
-    const res = await fetch(API_URL, {
+    // Transport selection:
+    //  • a user-supplied key (or local built-in from secrets.js) → call Groq directly
+    //  • otherwise → POST to the serverless proxy, which injects the key server-side
+    //    so it never reaches the browser.
+    const directKey = getKey();
+    let url, headers;
+    if (directKey) {
+      url = API_URL;
+      headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${directKey}` };
+    } else if (proxyAvailable()) {
+      url = proxyURL();
+      headers = { 'Content-Type': 'application/json' };
+    } else {
+      throw new Error('No AI key configured and no proxy available');
+    }
+
+    const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      headers,
       body: JSON.stringify(body),
     });
     if (!res.ok) {
       const err = await res.text().catch(() => '');
-      throw new Error(`Groq API ${res.status}: ${err}`);
+      throw new Error(`AI API ${res.status}: ${err}`);
     }
     const data = await res.json();
     return (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';

@@ -6,3 +6,4 @@ secrets.js
 
 # Preview server helper output
 .claude/serve.js.log
+.vercel

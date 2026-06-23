@@ -121,15 +121,39 @@ index.html      role picker / landing
 driver.html     driver app  (driver.js)
 admin.html      dispatch center (admin.js)
 common.js       shared engine: Store (cross-tab sync), classifier, geo helpers
+api/groq.js     serverless proxy — injects GROQ_API_KEY server-side (Vercel)
 styles.css      shared dark theme
 ```
 
-## Swapping in a real LLM
+## AI & the API key
 
-`classify()` in `common.js` is rule-based but returns the **exact** JSON shape the
-BlackBox SOS Groq prompt produces (`severity`, `likely_injuries`, `dispatch`,
-`hospital_dept`, `estimated_casualties`, `priority_score`). To use a real model, replace
-its body with a `fetch` to your `/api/classify` endpoint — nothing else changes.
+AI triage, narratives, first-aid, and operator chat are powered by **Groq**
+(`llama-3.3-70b-versatile`) through a single `GroqAPI.call()` in `common.js`. The key
+is handled per-environment and **never ships to the browser in production**:
+
+| Environment | Where the key lives | How the browser reaches Groq |
+|---|---|---|
+| Local dev | `secrets.js` (git-ignored) → `window.GROQ_BUILTIN_KEY` | direct to Groq |
+| Public deploy (Vercel) | `GROQ_API_KEY` env var on the server | via the `/api/groq` serverless proxy |
+| Any host | a key the user pastes in Settings (localStorage) | direct to Groq |
+
+`call()` picks the transport automatically: if a direct key is present it calls Groq;
+otherwise it POSTs to the proxy (`api/groq.js`), which injects the key server-side and
+forwards the request. The proxy returns Groq's exact response shape, so every
+higher-level helper is unchanged.
+
+`classify()` stays rule-based and returns the **exact** JSON shape the AI prompt
+produces (`severity`, `likely_injuries`, `dispatch`, `hospital_dept`,
+`estimated_casualties`, `priority_score`) — it's the automatic fallback whenever AI is
+unavailable.
+
+### Deploying with the key hidden (Vercel)
+
+```bash
+vercel                       # link/create the project
+vercel env add GROQ_API_KEY  # paste your Groq key (server-side only)
+vercel --prod                # deploy; AI now works with no key in the client
+```
 
 ## Not production-ready (yet)
 
